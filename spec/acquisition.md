@@ -221,8 +221,8 @@ yet acquired it.
 
 ### CLAIMED
 
-The provenance mechanism has accepted exactly one execution attempt for the
-authorized slot and issued a claim binding at least:
+For a hosted profile, the provenance mechanism has accepted exactly one
+execution attempt for the authorized slot and issued a claim binding at least:
 
 ```text
 run_id
@@ -233,7 +233,13 @@ ordering_proof
 provenance_profile
 ```
 
-The claim MUST be attributable to the provider/provenance mechanism.
+The hosted claim MUST be attributable to the provider/provenance mechanism.
+
+For `deterministic_reexecution`, CLAIMED means the authorized slot has been
+instantiated by the committed lineage entry that fixes the complete
+recomputation inputs. No provider claim receipt or provider acceptance timestamp
+is required; the lineage entry and deterministic recomputation supply the
+binding.
 
 `accepted_at` is evidence about the provider's reported acceptance time. It
 MUST NOT substitute for the authoritative `ordering_proof` required by C16.
@@ -414,6 +420,14 @@ insufficient when selected.
 | `deterministic_reexecution` | all four, when its pinned deterministic conditions below hold | authorized-slot lineage, canonical execution inputs/request hash, deterministic terminal output, `observed_scope` | authoritative pre-result manifest/contract commitment that fixes the slot and full recomputation inputs before execution |
 | `tee_attestation` | all four, when the attestation binds slot, exact request, terminal state, and scope and the profile provides non-equivocating sequencing | attested claim, terminal/no-result record, scope, TEE quote | profile-declared independently verifiable monotonic/sealed sequencing or an on-chain inclusion proof |
 | `signed_receipt` | all four only with independently verifiable claim/terminal non-equivocation and absence semantics | provider-signed claim, terminal/no-result receipt, scope | profile-declared append-only/checkpointed ordering proof or an on-chain inclusion proof |
+| `invinoveritas-admission-chain-v1` | **insufficient for `llm_judge` formation**: exact request binding is established; C16 ordering is established for receipts with a verifiable checkpoint-inclusion proof; terminal uniqueness is established only for the deployed terminal-record subset; preauthorized slot authority is absent, so `authorized_execution` cannot be established for the profile as a whole | hash-chained admission receipt, requester commitment binding, checkpoint inclusion proof, and (where present) unique terminal record with `observed_scope` | admission-chain position authenticated by Merkle checkpoint inclusion whose root is OpenTimestamps-anchored to Bitcoin; timestamps are evidence only and are not compared |
+
+A registry entry is descriptive, not self-authorizing. A listed profile that
+does not cover all four eligibility terms for every execution admitted under
+that profile MUST be refused at formation. In particular,
+`invinoveritas-admission-chain-v1` is listed to make the sufficiency rule
+falsifiable against a deployed mechanism; its independently verifiable ordering
+does not manufacture the missing preauthorized slot authority.
 
 A `signed_receipt` profile that lacks independently verifiable
 non-equivocation or attested absence does not cover all four terms and MUST be
@@ -452,7 +466,8 @@ silently promoted to hosted semantics.
 | TEE-hosted with profile-compliant attestation and sequencing | ✓ | `tee_attestation` |
 | Plain provider API with no claim/terminal receipts or attested non-results | ✗ | refused at formation |
 
-A claim record MUST minimally bind:
+For a provenance profile that uses hosted claim receipts, a claim record MUST
+minimally bind:
 
 ```json
 {
@@ -466,19 +481,23 @@ A claim record MUST minimally bind:
 }
 ```
 
-A terminal record MUST minimally bind:
+For a provenance profile that uses attested terminal records, a terminal record
+MUST minimally bind:
 
 ```json
 {
   "claim_receipt_hash": "...",
   "terminal_status": "RESULT | UNRESOLVED | NO_RESULT",
   "output_hash": "...",
+  "observed_scope": ["..."],
   "attestation": "..."
 }
 ```
 
 `output_hash` is omitted only when the committed terminal status does not
-carry an output.
+carry an output. `deterministic_reexecution` MAY represent both acquisition
+and terminality through its replayable lineage rather than manufacturing hosted
+receipt objects that add no authority.
 
 ## 11. Conformance rules C16–C21
 

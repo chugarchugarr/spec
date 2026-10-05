@@ -17,6 +17,14 @@ v0.0.3 candidates and are **not yet reference-enforced**; that marker is removed
 only when the eligibility checker is integrated. Their authoritative text is
 [`spec/acquisition.md`](./acquisition.md).
 
+For every manifest containing an `llm_judge`, formation MUST also refuse any
+declared `provenance_profile` whose registry entry does not establish all four
+eligibility terms for that judge:
+`authorized_execution`, `exact_request_binding`,
+`unique_terminal_execution`, and `sufficient_scope`. Registration alone
+does not confer sufficiency. This is the static profile-sufficiency check that
+precedes the C16–C21 runtime/replay obligations.
+
 | Id | Rule | Status | Enforcement tier |
 |----|------|--------|------------------|
 | **C1** | Exactly one party MUST have role `payer` and exactly one MUST have role `payee`. | reference-enforced | formation/static |
