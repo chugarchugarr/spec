@@ -130,6 +130,23 @@ provenance profile cannot establish the predecessor authority/order relation,
 
 `dispute_id` MUST NOT be executor-regenerable after observation.
 
+### On-chain dispute namespace bindings
+
+For an ERC-792 binding, `dispute_id` is the arbitrator-assigned on-chain
+`disputeID` created by the dispute-creation transaction. The authoritative
+predecessor/order fact is chain inclusion of that creation event under the
+manifest-committed chain/finality policy. The executor MUST NOT substitute a
+locally generated namespace.
+
+For an ERC-8183 binding, `dispute_id` is the job id established by the escrow
+lifecycle. The authoritative predecessor/order fact is chain inclusion of the
+job state that establishes that id under the manifest-committed chain/finality
+policy. The executor MUST NOT regenerate the job namespace after observation.
+
+For these bindings, dispute creation is an authoritative chain event rather
+than an executor choice. That makes F6/F6b structural: chain inclusion supplies
+the C16 predecessor-ordering proof, while a bare timestamp does not.
+
 ## 4. Submission is not admission
 
 A requester-signed object and a provider-signed object make different claims
@@ -147,8 +164,12 @@ A `submission_commitment` MAY be preserved as evidence.
 
 It MUST NOT prove provider admission.
 
-A `claim_receipt` MUST be signed or otherwise attested by the provenance
-mechanism that has authority to admit the execution.
+For a hosted profile, a `claim_receipt` MUST be signed or otherwise attested
+by the provenance mechanism that has authority to admit the execution.
+
+The `deterministic_reexecution` profile defined in §10 is the degenerate
+self-hosted path: admission is established by the committed lineage entry and
+deterministic recomputation, so no external provider signature is required.
 
 Silence after a requester submission MUST NOT be interpreted as admission or as
 `ATTESTED_NO_RESULT` unless the committed provenance mechanism makes that
@@ -300,6 +321,11 @@ of:
 A conforming implementation MUST NOT silently choose among multiple valid
 terminal observations for the same claimed attempt.
 
+Byte-identical duplicate terminal records are redundant attestations of the
+same terminal record and do not constitute equivocation. Distinct terminal
+records for the same claimed attempt that conflict in canonical terminal-state
+bytes are terminal equivocation.
+
 If conflicting terminal records exist and the provenance profile does not
 establish a unique authoritative terminal state, the run MUST resolve
 `UNRESOLVED`.
@@ -320,13 +346,20 @@ Free-form limitations MAY remain evidence-only.
 Any limitation capable of altering contractual state MUST enter the
 authoritative projection as a structured, machine-evaluable field.
 
-The manifest MUST commit:
+In v0.0.3, scope is a flat set of enumerated tokens. The only supported
+satisfaction predicate is:
 
-- the `required_scope` for each requirement or result class; and
-- the exact predicate by which an observation scope satisfies that requirement.
+```text
+required_scope ⊆ observed_scope
+```
 
-If `observation_scope` does not satisfy `required_scope`, the run MUST
-resolve `UNRESOLVED`.
+The manifest MUST commit `required_scope` for each requirement or result
+class. The predicate is fixed by this version and MUST NOT be replaced by an
+executor-selected expression. Richer scope forms or predicate languages are
+reserved and MUST be refused at formation until a later version defines their
+complete semantics.
+
+If `required_scope ⊄ observed_scope`, the run MUST resolve `UNRESOLVED`.
 
 A VERIFIED/authentic result therefore cannot silently escalate into authority
 for a consequence outside the scope it establishes.
@@ -356,7 +389,68 @@ semantics of:
 ```
 
 Requirement/result configuration MUST additionally commit `required_scope`
-and the scope-satisfaction predicate wherever scope can affect authority.
+wherever scope can affect authority. For v0.0.3 the scope predicate is fixed as
+`required_scope ⊆ observed_scope`.
+
+### Provenance-profile registry and sufficiency
+
+A named provenance profile is conforming only if its registry entry declares:
+
+1. which terms of `eligible(o)` it can establish;
+2. the records or lineage objects it emits; and
+3. the independently verifiable mechanism by which C16 predecessor ordering is
+   established.
+
+The four required eligibility terms are
+`authorized_execution`, `exact_request_binding`,
+`unique_terminal_execution`, and `sufficient_scope`. A manifest containing
+an `llm_judge` MUST select a registered profile whose declared guarantees cover
+all four terms for that judge. If any term is uncovered, the manifest MUST be
+refused at formation; runtime evidence cannot repair a profile that was
+insufficient when selected.
+
+| Profile | Eligibility coverage | Records / lineage | C16 ordering mechanism |
+|---|---|---|---|
+| `deterministic_reexecution` | all four, when its pinned deterministic conditions below hold | authorized-slot lineage, canonical execution inputs/request hash, deterministic terminal output, `observed_scope` | authoritative pre-result manifest/contract commitment that fixes the slot and full recomputation inputs before execution |
+| `tee_attestation` | all four, when the attestation binds slot, exact request, terminal state, and scope and the profile provides non-equivocating sequencing | attested claim, terminal/no-result record, scope, TEE quote | profile-declared independently verifiable monotonic/sealed sequencing or an on-chain inclusion proof |
+| `signed_receipt` | all four only with independently verifiable claim/terminal non-equivocation and absence semantics | provider-signed claim, terminal/no-result receipt, scope | profile-declared append-only/checkpointed ordering proof or an on-chain inclusion proof |
+
+A `signed_receipt` profile that lacks independently verifiable
+non-equivocation or attested absence does not cover all four terms and MUST be
+refused. A generic provider API response is not a registry profile merely
+because it is authenticated.
+
+### `deterministic_reexecution`: degenerate cheap path
+
+For a self-hosted judge on a pinned, batch-invariant execution stack with a
+committed deterministic seed, authority is established by recomputation rather
+than hosted-provider receipts.
+
+The profile MUST commit every outcome-relevant recomputation input, including
+the model/weights pin, executable/runtime pin, transformation/provenance inputs,
+sampling parameters, deterministic seed, run-slot derivation, and
+`required_scope`. A third party given the same committed lineage MUST derive
+the same request binding and the same terminal output for the slot.
+
+Under this profile:
+
+- one recomputable canonical output exists per authorized slot;
+- request binding is the canonical digest of the committed recomputation inputs;
+- claim/terminal equivocation is detected by recomputation rather than by
+  choosing among provider receipts;
+- acquisition records reduce to the committed lineage entries needed to replay
+  that computation; and
+- `sufficient_scope` is checked by the fixed v0.0.3 subset predicate.
+
+If the stack is not batch-invariant/deterministic under its committed inputs,
+the profile is not satisfiable and the judge MUST be refused rather than
+silently promoted to hosted semantics.
+
+| Deployment form | v0.0.3 satisfiable? | Result |
+|---|---:|---|
+| Self-hosted deterministic, pinned stack + committed seed | ✓ | `deterministic_reexecution` |
+| TEE-hosted with profile-compliant attestation and sequencing | ✓ | `tee_attestation` |
+| Plain provider API with no claim/terminal receipts or attested non-results | ✗ | refused at formation |
 
 A claim record MUST minimally bind:
 
@@ -388,6 +482,11 @@ carry an output.
 
 ## 11. Conformance rules C16–C21
 
+C16–C21 apply to every manifest containing one or more `llm_judge`
+requirements. Measurement and attestation requirements acquire authority
+through their declared measurement/attestation sources and do not inherit these
+LLM-acquisition rules merely by appearing in the same manifest.
+
 ### C16 — preauthorized execution slots and authoritative predecessor ordering
 
 Every LLM-judge run MUST have a deterministic `run_id` derivable from
@@ -411,9 +510,11 @@ outcome-relevant execution input committed by the manifest.
 
 ### C18 — claim authority and uniqueness
 
-A claimed execution MUST carry provider/provenance attestation proving
-admission into the authorized slot. Requester submission evidence alone MUST
-NOT satisfy this rule.
+For a hosted provenance profile, a claimed execution MUST carry
+provider/provenance attestation proving admission into the authorized slot.
+Requester submission evidence alone MUST NOT satisfy this rule. Under
+`deterministic_reexecution`, the committed lineage entry plus deterministic
+recomputation establishes admission without an external provider signature.
 
 For a given authorized `attempt_id`, the provenance profile MUST also
 establish at most one authoritative claim or make multiple authentic claims
@@ -426,7 +527,9 @@ implementation MUST NOT select among conflicting authentic claims.
 
 The provenance profile MUST establish a unique terminal state for each claimed
 attempt, or make terminal equivocation detectable with a committed fail-closed
-consequence.
+consequence. Byte-identical duplicate terminal records are the same terminal
+record repeated and are not equivocation; distinct conflicting canonical
+terminal-state records are.
 
 ### C20 — retry closure
 
@@ -437,8 +540,10 @@ NOT authorize another attempt.
 ### C21 — authority scope
 
 Every scope/limitation capable of changing contractual state MUST be structured
-and machine-evaluable. The manifest MUST commit the required scope and exact
-satisfaction predicate.
+and machine-evaluable. In v0.0.3 both `required_scope` and
+`observed_scope` are flat sets of enumerated tokens, and satisfaction is
+exactly `required_scope ⊆ observed_scope`. Richer scope forms or predicates are
+reserved and MUST be refused at formation.
 
 ## 12. Required semantic regression fixtures
 
