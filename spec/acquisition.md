@@ -421,6 +421,7 @@ insufficient when selected.
 | `tee_attestation` | all four, when the attestation binds slot, exact request, terminal state, and scope and the profile provides non-equivocating sequencing | attested claim, terminal/no-result record, scope, TEE quote | profile-declared independently verifiable monotonic/sealed sequencing or an on-chain inclusion proof |
 | `signed_receipt` | all four only with independently verifiable claim/terminal non-equivocation and absence semantics | provider-signed claim, terminal/no-result receipt, scope | profile-declared append-only/checkpointed ordering proof or an on-chain inclusion proof |
 | `invinoveritas-admission-chain-v1` | **insufficient for `llm_judge` formation**: exact request binding is established; C16 ordering is established for receipts with a verifiable checkpoint-inclusion proof; terminal uniqueness is established only for the deployed terminal-record subset; preauthorized slot authority is absent, so `authorized_execution` cannot be established for the profile as a whole | hash-chained admission receipt, requester commitment binding, checkpoint inclusion proof, and (where present) unique terminal record with `observed_scope` | admission-chain position authenticated by Merkle checkpoint inclusion whose root is OpenTimestamps-anchored to Bitcoin; timestamps are evidence only and are not compared |
+| `invinoveritas-admission-chain-v2` | **insufficient for `llm_judge` formation as currently described**: preauthorized slot authority, exact request binding, provider-enforced claim uniqueness, terminal uniqueness, and the `policy:` / `class:` scope vocabulary are present, but the profile currently permits retry after a chained `UNRESOLVED` terminal and does not guarantee a C16 checkpoint-inclusion proof for every admitted receipt; those two gaps prevent profile-wide sufficiency | slot-authorization row, slot-bound claim with `attempt_id` and `slot_receipt_hash`, chained terminal record with `observed_scope`, prior-terminal linkage for retries, checkpoint inclusion proof where available | slot authorization precedes the claim by hash dependency and admission-chain position, authenticated by checkpoint inclusion when a proof is available; the dispute namespace authority remains external and must come from the manifest-committed `dispute_namespace_ref` |
 
 A registry entry is descriptive, not self-authorizing. A listed profile that
 does not cover all four eligibility terms for every execution admitted under
@@ -428,6 +429,23 @@ that profile MUST be refused at formation. In particular,
 `invinoveritas-admission-chain-v1` is listed to make the sufficiency rule
 falsifiable against a deployed mechanism; its independently verifiable ordering
 does not manufacture the missing preauthorized slot authority.
+
+`invinoveritas-admission-chain-v2` closes the v1 preauthorized-slot gap, but its
+current retry semantics and proof-availability boundary still prevent
+profile-wide sufficiency. `TERMINAL_UNRESOLVED` consumes the logical run under
+§7 and MUST NOT authorize another attempt. A later attempt MAY be authorized
+only after `ATTESTED_NO_RESULT` or another manifest-committed, independently
+verifiable retry condition. A chained `NO_RESULT` may serve that role only when
+the profile defines and verifies it as such; a chained `UNRESOLVED` terminal
+cannot. Separately, C16 predecessor ordering must be establishable for every
+execution admitted under the selected profile. If a checkpoint-inclusion proof
+can be withheld for a shared checkpoint, the profile MUST either constrain
+eligible executions to a proof-bearing checkpoint form or provide another
+committed independently verifiable ordering proof for every admitted receipt.
+The `policy:` / `class:` scope vocabulary is a valid static condition: a
+manifest whose `required_scope` falls outside that vocabulary is refused at
+formation. Historical v2 receipts remain evidence; later closure of these gaps
+does not retroactively confer authority on a formation that was insufficient.
 
 A `signed_receipt` profile that lacks independently verifiable
 non-equivocation or attested absence does not cover all four terms and MUST be
